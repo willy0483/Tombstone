@@ -1,48 +1,73 @@
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <netdb.h>
 #include <netinet/in.h>
+
+#define PORT "9002"
+#define BACKLOG 5
 
 int main()
 {
-	char server_message[256] = "You have reached the server!";
+	int yes = 1;
 
-	// create server socket
-	int socketfd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+	int socketfd;
+	struct addrinfo hints;
+	struct addrinfo* servinfo;
 
-	// define the server address
-	struct sockaddr_in addr = {
-		.sin_family = AF_INET,
-		.sin_port = htons(9002),
-		.sin_addr = { .s_addr = INADDR_ANY },
-	};
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
 
-	// bind the socket to our specified IP and port
-	int bind_state = bind(socketfd, (struct sockaddr*)&addr, sizeof(addr));
-	if(bind_state == -1)
+	int addr_info_state = getaddrinfo(NULL, PORT, &hints, &servinfo);
+	if(addr_info_state != 0)
 	{
-		printf("Failed to bind the socket\n");
+		printf("getaddrinfo: %s\n", gai_strerror(addr_info_state));
 		return 1;
 	}
 
-	int listen_state = listen(socketfd, 5);
-	if(listen_state == -1)
+	socketfd = socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
+	if(socketfd == -1)
+	{
+		printf("Failed to create socket: %s\n", gai_strerror(socketfd));
+		return 1;
+	}
+
+	if(setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+	{
+		printf("Failed to setsockopt\n");
+		return 1;
+	}
+
+	if(bind(socketfd, servinfo->ai_addr, servinfo->ai_addrlen) != 0)
+	{
+		printf("Failed to bind socket\n");
+		return 1;
+	}
+
+	if(listen(socketfd, BACKLOG) != 0)
 	{
 		printf("Failed to listen to socket\n");
+		return 1;
 	}
 
 	int client_socket = accept(socketfd, NULL, NULL);
 	if(client_socket == -1)
 	{
-		printf("Failed to accept socket\n");
+		printf("Failed to accept connecten from client\n");
 		return 1;
 	}
 
-	send(client_socket, server_message, sizeof(server_message), 0);
+	send(client_socket, "You have reached the server!", 29, 0);
 
+	close(client_socket);
 	close(socketfd);
+
+	freeaddrinfo(servinfo);
 	return 0;
 }
